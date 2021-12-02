@@ -6,106 +6,136 @@ const bodyParser = require('body-parser')
 const {success, error} = require('./modules/functions')
 const conf = require('./config.json')
 
-app.use(morgan('dev'))
-app.use(bodyParser.json())
-app.use(bodyParser.urlencoded({extended: true}))
-
-let members = [{
-        id: 1,
-        name: 'sviatoslav'
-        }, {
-        id: 2,
-        name: 'igor'
-        }, {
-        id: 3,
-        name: 'bogdan'}]
-
-let membersRouter = express.Router()
-app.use(conf.rootAPI+'members', membersRouter)
-
-membersRouter.route('/')
-    .get((req, res) => {
-        if(req.query.max != undefined){
-            res.json(
-                success(members.slice(0, req.query.max))
-            )
-        } else {
-            res.json(members)
-        }
-    })
-
-    .post((req, res) => {
-        //res.send(req.body)
-        if(req.body.name){
-            let sameName = false;
-            for(let i=0; i < members.length; i++){
-                if(members[i].name == req.body.name){
-                    sameName = true
-                    break
-                }
-            }
-
-            if(sameName){
-                res.json(error('name already taken'))
-            } else {
-                let member = {
-                    id: createId(),
-                    name: req.body.name
-                }
-                members.push(member)
-                res.json(success(member))
-            }
-        } else {
-            res.json(error('no name value'))
-        }
-    })
-
-membersRouter.route('/:id')
-    .get((req, res) => {
-        let index = getIndex(req.params.id)
-        if(typeof(index) == 'string') {
-            res.json(error(index))
-        } else {
-            res.send(success(members[index]))
-        }
-    })
-    .put((req, res) => {
-        let index = getIndex(req.params.id)
-        if(typeof(index) == 'string') {
-            res.json(error(index))
-        } else {
-            let sameName = false
-            for (let i=0; i < members.length; i++){
-                if(req.body.name == members[i].name && req.params.id != members[i].id){
-                    sameName = true
-                    break
-                }
-            }
-
-            if(sameName){
-                res.json(error('same name'))
-            } else {
-                members[index].name = req.body.name
-                res.send(success(true))
-            }
-
-        }
-    })
-
-    .delete((req, res) => {
-        let index = getIndex(req.params.id)
-        if(typeof(index) == 'string') {
-            res.json(error(index))
-        } else {
-            members.splice(index,1)
-            res.json(success(members))
-        }
-    })
-
-
-app.listen(conf.port, () => {
-    console.log("started");
+const mysql = require('mysql')
+const db = mysql.createConnection({
+    host: 'localhost',
+    database: 'test',
+    user: 'root',
+    password: ''
 })
+
+db.connect((err) => {
+    if(err){
+        console.log(err.message)
+    } else {
+        console.log('database connected')
+
+        app.use(morgan('dev'))
+        app.use(bodyParser.json())
+        app.use(bodyParser.urlencoded({extended: true}))
+
+        let members = [{
+            id: 1,
+            name: 'sviatoslav',
+            mail: 'sviat@mail.com',
+            pwd: 'test'
+        }]
+
+        let membersRouter = express.Router()
+        app.use(conf.rootAPI+'members', membersRouter)
+
+        membersRouter.route('/')
+            .get((req, res) => {
+                let sql = 'SELECT * FROM membre'
+                db.query(sql,[],(err, result) => {
+                    if(err){
+                        console.log(err.message)
+                        res.json(error(err.message))
+                    } else {
+                        let m = result
+                        res.json(success(m))
+                    }
+                })
+            })
+
+        membersRouter.route('/')
+            .post((req, res) => {
+                if(req.body.nom){
+                    let sql = 'INSERT INTO membre (nom, mail, pwd) VALUES (?,?,?)'
+                    db.query(sql, [req.body.nom, req.body.mail, req.body.pwd], (err, result) => {
+                        if(err) {
+                            console.log(err.message)
+                            res.json(error(err.message))
+                        } else {
+                            let m = result
+                            console.log('Ajout de '+ req.body.nom+ 'dans la database')
+                            res.json(success('Ajout de '+ req.body.nom + ' dans la database'))
+                        }
+                    })
+                } else {
+                    res.json(error('no name value'))
+                }
+            })
+
+        membersRouter.route('/:id')
+            .get((req, res) => {
+                let index = parseInt(req.params.id)
+                if(typeof(index) == 'string') {
+                    res.json(error(index))
+                } else {
+                    let sql = 'SELECT * FROM membre WHERE id = ?'
+                    db.query(sql,[req.params.id],(err, result) => {
+                        if(err){
+                            console.log(err.message)
+                        } else {
+                            let m = result
+                            if(typeof m !== 'undefined' && m.length > 0){
+                                res.json(success(m))
+                            } else {
+                                console.log('Id du membre est inconnu')
+                                res.json(error('Id du membre est inconnu'))
+                            }
+                        }
+                    })
+                }
+            })
+
+            .put((req, res) => {
+                let index = parseInt(req.params.id)
+                if(typeof(index) == 'string') {
+                    res.json(error(index))
+                } else {
+                    let sql = 'UPDATE membre SET nom = ?, mail = ?, pwd = ? WHERE id = ?'
+                    db.query(sql, [req.body.nom, req.body.mail, req.body.pwd, req.params.id], (err, result) => {
+                        if (err) {
+                            console.log(err.message)
+                            res.json(error(err.message))
+                        } else {
+                            let m = result
+                            console.log('Modification de ' + req.body.nom + 'dans la database')
+                            res.json(success('Modification de ' + req.body.nom + ' dans la database'))
+                        }
+                    })
+                }
+            })
+
+            .delete((req, res) => {
+                let index = parseInt(req.params.id)
+                if(typeof(index) == 'string') {
+                    res.json(error(index))
+                } else {
+                    let sql = 'DELETE FROM membre WHERE id = ?'
+                    db.query(sql, [req.params.id], (err, result) => {
+                        if (err) {
+                            console.log(err.message)
+                            res.json(error(err.message))
+                        } else {
+                            let m = result
+                            console.log('Suppression de id ' + req.params.id + 'dans la database')
+                            res.json(success('Suppression de id ' + req.params.id + ' dans la database'))
+                        }
+                    })
+                }
+            })
+
+        app.listen(conf.port, () => {
+            console.log("started");
+        })
+
+    }
+})
+
+
 
 function getIndex(id){
     for(let i=0; i < members.length; i++){
